@@ -8,6 +8,7 @@ import { EventPulse } from '@/components/event-pulse'
 import { AdminToast } from '@/components/admin-toast'
 import { ScrollToTop } from '@/components/scroll-to-top'
 import { SplashScreen } from '@/components/splash-screen'
+import { PageTracker } from '@/components/page-tracker'
 
 export const metadata: Metadata = {
   title: 'السيد الريس | كاتب الرعب النفسي والجريمة والأساطير المصرية',
@@ -53,6 +54,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <AdminToast />
         <ScrollToTop />
         <SplashScreen />
+        <PageTracker />
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>
