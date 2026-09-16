@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
-import { BookOpen, FileText, Mail, Star, MessageSquare, Calendar, Link2, ShoppingBag, Quote, LogOut } from 'lucide-react'
+import { BookOpen, FileText, Mail, Star, MessageSquare, Calendar, Link2, ShoppingBag, Quote, LogOut, BarChart3 } from 'lucide-react'
 
 export default function DashboardPage() {
   const [email, setEmail] = useState('')
@@ -57,6 +57,7 @@ export default function DashboardPage() {
             { href: '/admin/orders',      icon: ShoppingBag,   label: 'الطلبات',     sub: 'مبيعات الكتب الإلكترونية',   color: 'text-emerald-400' },
             { href: '/admin/links',       icon: Link2,         label: 'الروابط',      sub: 'سوشيال ميديا ومتاجر الشراء', color: 'text-gold' },
             { href: '/admin/subscribers', icon: Mail,          label: 'المشتركون',   sub: 'إدارة قائمة البريد',          color: 'text-blood' },
+            { href: '/admin/analytics',   icon: BarChart3,     label: 'الإحصائيات',  sub: 'زوار الموقع وأكتر الصفحات',   color: 'text-emerald-400' },
           ].map(({ href, icon: Icon, label, sub, color }) => (
             <Link key={href} href={href}>
               <div className="card-lifted rounded-xl p-6 hover:border-ember/30 transition-colors cursor-pointer group">
