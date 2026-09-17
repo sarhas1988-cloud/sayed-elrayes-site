@@ -6,7 +6,8 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
 import {
   ArrowRight, Eye, UserRound, CalendarDays, FileText, ExternalLink,
-  Smartphone, Monitor, Tablet, HelpCircle, BarChart3,
+  Smartphone, Monitor, Tablet, HelpCircle, BarChart3, Download,
+  TrendingUp, TrendingDown,
 } from 'lucide-react'
 
 interface Summary {
@@ -14,26 +15,19 @@ interface Summary {
   visits: number
   unique_visitors: number
   views_today: number
+  prev_total_views: number
+  prev_visits: number
+  prev_unique_visitors: number
 }
 
-interface TopPage {
-  path: string
-  views: number
-}
+interface TopPage { path: string; views: number }
+interface TopReferrer { referrer: string; views: number }
+interface DailyView { day: string; views: number }
+interface DeviceBreakdown { device: string; views: number }
 
-interface TopReferrer {
-  referrer: string
-  views: number
-}
-
-interface DailyView {
-  day: string
-  views: number
-}
-
-interface DeviceBreakdown {
-  device: string
-  views: number
+const EMPTY_SUMMARY: Summary = {
+  total_views: 0, visits: 0, unique_visitors: 0, views_today: 0,
+  prev_total_views: 0, prev_visits: 0, prev_unique_visitors: 0,
 }
 
 const PERIODS: { label: string; days: number | null }[] = [
@@ -49,10 +43,21 @@ const DEVICE_ICON: Record<string, typeof Smartphone> = {
   'غير معروف': HelpCircle,
 }
 
+function pctChange(current: number, previous: number): number | null {
+  if (previous === 0) return current > 0 ? 100 : null
+  return Math.round(((current - previous) / previous) * 100)
+}
+
+function csvEscape(value: string | number): string {
+  const s = String(value)
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+}
+
 export default function AdminAnalyticsPage() {
   const [loading, setLoading] = useState(true)
   const [periodDays, setPeriodDays] = useState<number | null>(30)
-  const [summary, setSummary] = useState<Summary | null>(null)
+  const [periodLabel, setPeriodLabel] = useState('شهر')
+  const [summary, setSummary] = useState<Summary>(EMPTY_SUMMARY)
   const [topPages, setTopPages] = useState<TopPage[]>([])
   const [topReferrers, setTopReferrers] = useState<TopReferrer[]>([])
   const [dailyViews, setDailyViews] = useState<DailyView[]>([])
@@ -80,7 +85,7 @@ export default function AdminAnalyticsPage() {
       supabase.rpc('get_device_breakdown', { days_back: days }),
     ])
 
-    setSummary((summaryData?.[0] as Summary) ?? { total_views: 0, visits: 0, unique_visitors: 0, views_today: 0 })
+    setSummary((summaryData?.[0] as Summary) ?? EMPTY_SUMMARY)
     setTopPages((pagesData as TopPage[]) ?? [])
     setTopReferrers((referrersData as TopReferrer[]) ?? [])
     setDailyViews((dailyData as DailyView[]) ?? [])
@@ -90,19 +95,57 @@ export default function AdminAnalyticsPage() {
 
   useEffect(() => { loadData(periodDays) }, [periodDays, loadData])
 
-  if (loading && !summary) {
+  const exportCsv = () => {
+    const lines: string[] = []
+    lines.push(`تقرير إحصائيات — الفترة: ${periodLabel}`)
+    lines.push('')
+    lines.push('الملخص')
+    lines.push('المقياس,القيمة')
+    lines.push(`مشاهدات الصفحات,${summary.total_views}`)
+    lines.push(`الزيارات,${summary.visits}`)
+    lines.push(`زوار مختلفون,${summary.unique_visitors}`)
+    lines.push(`زيارات اليوم,${summary.views_today}`)
+    lines.push('')
+    lines.push('المشاهدات يوميًا')
+    lines.push('اليوم,المشاهدات')
+    dailyViews.forEach(d => lines.push(`${d.day},${d.views}`))
+    lines.push('')
+    lines.push('أكتر الصفحات زيارة')
+    lines.push('الصفحة,المشاهدات')
+    topPages.forEach(p => lines.push(`${csvEscape(p.path)},${p.views}`))
+    lines.push('')
+    lines.push('مصدر الزيارات')
+    lines.push('المصدر,المشاهدات')
+    topReferrers.forEach(r => lines.push(`${csvEscape(r.referrer)},${r.views}`))
+    lines.push('')
+    lines.push('نوع الجهاز')
+    lines.push('الجهاز,المشاهدات')
+    devices.forEach(d => lines.push(`${csvEscape(d.device)},${d.views}`))
+
+    const csv = '\uFEFF' + lines.join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `analytics-${periodLabel}-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  if (loading && summary === EMPTY_SUMMARY && dailyViews.length === 0) {
     return <div className="min-h-screen flex items-center justify-center"><p className="text-ink/50 font-tajawal">جاري التحميل...</p></div>
   }
 
   const cards = [
-    { label: 'زيارات اليوم', value: summary?.views_today ?? 0, icon: CalendarDays, color: 'text-ember' },
-    { label: 'الزيارات (Sessions)', value: summary?.visits ?? 0, icon: UserRound, color: 'text-gold' },
-    { label: 'زوار مختلفون', value: summary?.unique_visitors ?? 0, icon: UserRound, color: 'text-gold' },
-    { label: 'مشاهدات الصفحات', value: summary?.total_views ?? 0, icon: Eye, color: 'text-ember' },
+    { label: 'زيارات اليوم', value: summary.views_today, prev: null, icon: CalendarDays, color: 'text-ember' },
+    { label: 'الزيارات (Sessions)', value: summary.visits, prev: summary.prev_visits, icon: UserRound, color: 'text-gold' },
+    { label: 'زوار مختلفون', value: summary.unique_visitors, prev: summary.prev_unique_visitors, icon: UserRound, color: 'text-gold' },
+    { label: 'مشاهدات الصفحات', value: summary.total_views, prev: summary.prev_total_views, icon: Eye, color: 'text-ember' },
   ]
 
   const maxDaily = Math.max(1, ...dailyViews.map(d => d.views))
   const totalDeviceViews = Math.max(1, devices.reduce((sum, d) => sum + d.views, 0))
+  const showComparison = periodDays !== null
 
   return (
     <div className="min-h-screen p-4 sm:p-8">
@@ -113,30 +156,49 @@ export default function AdminAnalyticsPage() {
 
         <div className="flex flex-wrap items-center justify-between gap-3 mb-1">
           <h1 className="font-aref text-3xl text-ember">إحصائيات الزيارات</h1>
-          <div className="flex gap-1 bg-black/20 rounded-lg p-1">
-            {PERIODS.map((p) => (
-              <button
-                key={p.label}
-                onClick={() => setPeriodDays(p.days)}
-                className={`px-3 py-1.5 rounded-md text-xs font-tajawal transition-colors ${
-                  periodDays === p.days ? 'bg-ember text-white' : 'text-ink/60 hover:text-ink'
-                }`}
-              >
-                {p.label}
-              </button>
-            ))}
+          <div className="flex items-center gap-3">
+            <div className="flex gap-1 bg-black/20 rounded-lg p-1">
+              {PERIODS.map((p) => (
+                <button
+                  key={p.label}
+                  onClick={() => { setPeriodDays(p.days); setPeriodLabel(p.label) }}
+                  className={`px-3 py-1.5 rounded-md text-xs font-tajawal transition-colors ${
+                    periodDays === p.days ? 'bg-ember text-white' : 'text-ink/60 hover:text-ink'
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={exportCsv}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-tajawal border border-gold/30 text-gold hover:bg-gold/10 transition-colors"
+            >
+              <Download size={14} /> تصدير CSV
+            </button>
           </div>
         </div>
-        <p className="text-ink/30 font-tajawal text-xs mb-8">الزيارة = تصفّح متواصل من نفس الشخص (فاصل أقل من 30 دقيقة). مشاهدات الصفحات = كل صفحة اتفتحت.</p>
+        <p className="text-ink/30 font-tajawal text-xs mb-8">الزيارة = تصفّح متواصل من نفس الشخص (فاصل أقل من 30 دقيقة). النسب بتقارن بنفس طول الفترة اللي قبلها. الزيارات الوهمية (بوتات) مستبعدة.</p>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
-          {cards.map(({ label, value, icon: Icon, color }) => (
-            <div key={label} className="card-lifted rounded-xl p-6">
-              <Icon size={24} className={`${color} mb-3`} />
-              <p className="font-aref text-2xl text-ink mb-1">{value.toLocaleString('ar-EG')}</p>
-              <p className="text-ink/50 font-tajawal text-xs">{label}</p>
-            </div>
-          ))}
+          {cards.map(({ label, value, prev, icon: Icon, color }) => {
+            const change = showComparison && prev !== null ? pctChange(value, prev) : null
+            return (
+              <div key={label} className="card-lifted rounded-xl p-6">
+                <div className="flex items-start justify-between mb-3">
+                  <Icon size={24} className={color} />
+                  {change !== null && (
+                    <span className={`flex items-center gap-0.5 text-[11px] font-tajawal ${change >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {change >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+                      {Math.abs(change)}%
+                    </span>
+                  )}
+                </div>
+                <p className="font-aref text-2xl text-ink mb-1">{value.toLocaleString('ar-EG')}</p>
+                <p className="text-ink/50 font-tajawal text-xs">{label}</p>
+              </div>
+            )
+          })}
         </div>
 
         <div className="card-lifted rounded-xl p-6 mb-8">
